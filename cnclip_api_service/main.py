@@ -4,25 +4,35 @@
 
 '''
 
-# uvicorn main:app --reload
-# curl http://127.0.0.1:8000/
-
 import torch
 from fastapi import FastAPI, HTTPException, Body
 from PIL import Image
 import cn_clip.clip as clip
 from cn_clip.clip import load_from_name
-import base64, io, os, numpy as np, lmdb, ast, pickle
+# import base64, io, os, numpy as np, lmdb, ast, pickle
+import io, os, lmdb, pickle, base64
+from lmdb import open as open_lmdb
+# import pickle as pkl
 from typing import List
 from tqdm import tqdm
+import sys  
+sys.path.append(r'E:/surf')  # 添加该路径  
+from utils import load_surf_checkpoint_model_from_base, load_text_data_from_lmdb, load_images_from_paths  
+from cache_manager import cache_image_features, cache_text_features
 
-# FastAPI 初始化
+# -------初始化-----------
 app = FastAPI()
-
-# 设置设备和加载模型
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model, preprocess = load_from_name("ViT-H-14", device=device, download_root='./')
+model, preprocess = load_surf_checkpoint_model_from_base(
+    ckpt_path="E:/SURF2025/检索文化数据集/checkpoint/epoch_latest.pt"
+)
 model.eval()
+
+CACHE_DIR = "E:/surf/cache"
+LMDB_PATH = "E:/surf/valid_output_lmdb"    # mock
+FEATURES_CACHE = os.path.join(CACHE_DIR, "image_features.pt")
+META_CACHE = os.path.join(CACHE_DIR, "image_meta.pkl")
+
 
 # API Key 模拟
 API_KEYS = {"demo": "your_demo_api_key"}
@@ -34,67 +44,89 @@ def verify_api_key(api_key: str):
 def fix_base64_padding(b64_string: str) -> str:
     return b64_string + '=' * ((4 - len(b64_string) % 4) % 4)
 
-# 根路由
 @app.get("/")
 def read_root():
     return {"message": "Welcome to the CN-CLIP API"}
 
-# LMDB 数据加载函数
-def load_images_from_lmdb(lmdb_path: str):
-    env = lmdb.open(lmdb_path, readonly=True, lock=False)
-    images, image_ids, captions, tags_list = [], [], [], []
-    with env.begin() as txn:
-        cursor = txn.cursor()
-        for key, value in cursor:
-            try:
-                data = ast.literal_eval(value.decode("utf-8"))
-                image_data = base64.b64decode(fix_base64_padding(data["image_base64"]))
-                img = Image.open(io.BytesIO(image_data)).convert("RGB")
-                images.append(img)
-                image_ids.append(data["image_id"])
-                captions.append(data["caption"])
-                tags_list.append(data.get("tags", []))  # 提取 tags 字段
-            except Exception as e:
-                print(f"[WARN] Failed to load record {key}: {e}")
-                print(f"Offending base64 string (truncated): {data.get('image_base64', '')[:100]}...")
-    env.close()
-    return image_ids, images, captions, tags_list
+# -------------加载数据------------------------
+text_ids, original_texts, nld_texts, image_ids_list, image_paths_list, splits = load_text_data_from_lmdb(LMDB_PATH)
+image_list = load_images_from_paths(image_paths_list)
+
+image_records = [
+    {
+        "image": image_list[i],
+        "image_id": image_ids_list[i],
+        "text_id": text_ids[i],
+        "original_text": original_texts[i],
+        "NLD_text": nld_texts[i],
+        "image_path": image_paths_list[i][0] if image_paths_list[i] else ""
+    }
+    for i in range(len(image_list))
+]
+
+image_features_tensor, meta = cache_image_features(model, preprocess, image_records, CACHE_DIR)
+text_ids = meta["text_ids"]
+original_texts_list = meta["original_texts"]
+nld_texts_list = meta["nld_texts"]
+image_paths_list = meta["image_paths"]
+
+# 缓存文本特征（基于 original_texts）
+text_features_tensor = cache_text_features(model, meta["original_texts"], CACHE_DIR)
 
 
-# 缓存路径
-CACHE_DIR = "E:/surf/cache"
-LMDB_PATH = "E:/surf/coco_lmdb_database_small"
-FEATURES_CACHE = os.path.join(CACHE_DIR, "image_features.pt")
-META_CACHE = os.path.join(CACHE_DIR, "image_meta.pkl")
 
-# 加载缓存或重新提取
+# --------加载缓存或重新提取
 if os.path.exists(FEATURES_CACHE) and os.path.exists(META_CACHE):
     print("Loading cached image features and metadata...")
     image_features_tensor = torch.load(FEATURES_CACHE).to(device)
+    # with open(META_CACHE, "rb") as f:
+    #     image_ids_list, caption_list, tags_list = pickle.load(f)
     with open(META_CACHE, "rb") as f:
-        image_ids_list, caption_list, tags_list = pickle.load(f)
-    _, image_list, _, _ = load_images_from_lmdb(LMDB_PATH)
+        meta = pickle.load(f)
+    image_ids_list = meta["image_ids"]
+    caption_list = meta["original_texts"]
+    nld_texts_list = meta["nld_texts"]
+    text_ids_list = meta["text_ids"]
+    image_paths_list = meta["image_paths"]
     print(f"Loaded {len(image_ids_list)} image features.")
 else:
-    print("Loading LMDB records...")
-    image_ids_list, image_list, caption_list, tags_list = load_images_from_lmdb(LMDB_PATH)
+    print("Loading LMDB records and image files...")
+
+
+    # 提取图像路径列表
+    env = open_lmdb(LMDB_PATH, readonly=True, lock=False)
+    image_paths_list = []
+    with env.begin() as txn:
+        for key, value in txn.cursor():
+            data = pickle.loads(value)
+            image_paths_list.append(data["image_paths"])
+    env.close()
+
+
+    # 创建 'original_texts', 'nld_texts', no tags
+    original_texts_list = original_texts
+    nld_texts_list = nld_texts
 
     print("Calculating image features...")
     image_features_list = []
     for img in tqdm(image_list, desc="🔍 Extracting image features"):
+        if img is None:
+            image_features_list.append(torch.zeros(model.visual.output_dim))  # 占位向量
+            continue
         img_tensor = preprocess(img).unsqueeze(0).to(device)
         with torch.no_grad():
             feat = model.encode_image(img_tensor)
             feat /= feat.norm(dim=-1, keepdim=True) + 1e-7
             image_features_list.append(feat.cpu())
 
-    image_features_tensor = torch.cat(image_features_list, dim=0)
+    image_features_tensor = torch.stack(image_features_list, dim=0)
 
+    # 缓存保存
     os.makedirs(CACHE_DIR, exist_ok=True)
     torch.save(image_features_tensor, FEATURES_CACHE)
     with open(META_CACHE, "wb") as f:
-        pickle.dump((image_ids_list, caption_list, tags_list), f)
-    print(f"✅ Saved {len(image_ids_list)} features and metadata to cache.")
+        pickle.dump((image_ids_list, original_texts_list, nld_texts_list), f)
+    print(f"Saved {len(image_ids_list)} features and metadata to cache.")
 
 
 # -------------------- 图搜文 --------------------
@@ -103,29 +135,65 @@ else:
 async def image_to_text(img_base64: str = Body(...), api_key: str = Body(...)):
     try:
         verify_api_key(api_key)
-        text_candidates = list(set(caption_list))  # 去重后的 captions
+
+        # 构建结构化记录
+        text_records = [
+            {
+                "text_id": tid,
+                "original_text": ori,
+                "NLD_text": nld,
+                "image_paths": path
+            }
+            for tid, ori, nld, path in zip(text_ids, original_texts_list, nld_texts_list, image_paths_list)
+        ]
+
+        # 去重原文
+        seen = set()
+        text_candidates, record_mapping = [], []
+        for i, rec in enumerate(text_records):
+            if rec["original_text"] not in seen:
+                seen.add(rec["original_text"])
+                text_candidates.append(rec["original_text"])
+                record_mapping.append(i)
+
         print("使用的 text_candidates 数量:", len(text_candidates))
 
         img = Image.open(io.BytesIO(base64.b64decode(img_base64))).convert("RGB")
         img_tensor = preprocess(img).unsqueeze(0).to(device)
-        image_features = model.encode_image(img_tensor)
-        image_features /= image_features.norm(dim=-1, keepdim=True) + 1e-7
 
-        text_tokens = clip.tokenize(text_candidates).to(device)
         with torch.no_grad():
+            image_features = model.encode_image(img_tensor)
+            image_features /= image_features.norm(dim=-1, keepdim=True) + 1e-7
+            text_tokens = clip.tokenize(text_candidates).to(device)
+            text_features = model.encode_text(text_tokens)
+            text_features /= text_features.norm(dim=-1, keepdim=True) + 1e-7
             logits_per_image, _ = model.get_similarity(img_tensor, text_tokens)
             probs = logits_per_image.softmax(dim=-1).cpu().numpy()[0]
 
+            # # 计算相似度（图 -> 文）点积
+            # similarity = image_features @ text_features.T
+            # probs = similarity.softmax(dim=-1).cpu().numpy()[0]
+
+        # Top-K 匹配
         topk_indices = probs.argsort()[-5:][::-1]
-        results = [
-            {"rank": i + 1, "text": text_candidates[idx], "score": round(probs[idx] * 100, 3)}
-            for i, idx in enumerate(topk_indices)
-        ]
+        results = []
+        for i, idx in enumerate(topk_indices):
+            rec = text_records[record_mapping[idx]]
+            results.append({
+                "rank": i + 1,
+                "text_id": rec["text_id"],
+                "original_text": rec["original_text"],
+                "NLD_text": rec["NLD_text"],
+                "image_path": rec["image_paths"][0] if rec["image_paths"] else None,
+                "score": round(probs[idx] * 100, 3)
+            })
         return {"top_k_results": results}
+
     except Exception as e:
         import traceback
         print("ERROR:", traceback.format_exc())
         return {"error": str(e)}
+
 
 # -------------------- 文搜图 --------------------
 
@@ -133,55 +201,33 @@ async def image_to_text(img_base64: str = Body(...), api_key: str = Body(...)):
 async def text_to_image(query_text: str = Body(...), api_key: str = Body(...)):
     verify_api_key(api_key)
 
-    def get_image_tags(image_id: str) -> List[str]:
-        if image_id in image_ids_list:
-            idx = image_ids_list.index(image_id)
-            return tags_list[idx]
-        return []
-  
-    global image_list 
-    if "image_list" not in globals() or not image_list:
-        _, image_list, _ = load_images_from_lmdb(LMDB_PATH)
-
     with torch.no_grad():
+        # 文本向量化
         text_tokens = clip.tokenize([query_text]).to(device)
         text_features = model.encode_text(text_tokens)
         text_features /= text_features.norm(dim=-1, keepdim=True) + 1e-7
-
         logits = model.logit_scale.exp() * (text_features @ image_features_tensor.T)
         probs = logits.softmax(dim=-1).cpu().numpy()[0]
-        
-
-    # # 慢
-    # img_tensors = torch.stack([preprocess(img) for img in image_list]).to(device)
-
-    # with torch.no_grad():
-    #     text_tokens = clip.tokenize([query_text]).to(device)
-    #     logits_per_text, _ = model.get_similarity(img_tensors, text_tokens)
-    #     probs = logits_per_text.softmax(dim=-1).cpu().numpy()[0]
-
 
     topk_indices = probs.argsort()[-5:][::-1]
     results = []
     for i, idx in enumerate(topk_indices):
-
-        # 从缓存图像列表读取并转为 base64
         img = image_list[idx]
         buffered = io.BytesIO()
         img.save(buffered, format="JPEG")
         img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-         # 从 image_ids_list 中提取标签  
-        tags = get_image_tags(image_ids_list[idx])  
-        tag_string = ", ".join(tags)  
-
         results.append({
             "rank": i + 1,
             "image_id": image_ids_list[idx],
+            "text_id": text_ids[idx],
+            "original_text": original_texts_list[idx],
+            "NLD_text": nld_texts_list[idx],
+            "image_path": image_paths_list[idx][0] if image_paths_list[idx] else None,
             "image_base64": img_base64,
-            "score": round(probs[idx] * 100, 3),
-            "tags": tag_string  
+            "score": round(probs[idx] * 100, 3)
         })
+
     return {"top_k_results": results}
 
 
