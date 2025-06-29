@@ -5,6 +5,9 @@ import lmdb
 import pickle
 from PIL import Image
 import os
+from datetime import datetime
+# from cache_manager import cache_image_features, cache_text_features
+from cache.cache_manager import cache_image_features, cache_text_features
 
 def load_json_config(path: str) -> dict:
     with open(path, 'r', encoding='utf-8') as f:
@@ -91,6 +94,41 @@ def load_images_from_paths(image_paths_list, root_dir="E:/SURF2025/检索文化�
         except Exception as e:
             print(f"⚠️ Failed to load image: {img_path}, error: {e}")
             images.append(None)
-    return images
+    return images, img_path
+
+def log(msg):
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
+
+def load_or_extract_image_features(
+    model, preprocess, data_records, cache_dir,
+    batch_size=16, log_func=log
+):
+    cache_path = os.path.join(cache_dir, "image_features.pt")
+    if os.path.exists(cache_path):
+        log_func("Loading cached image features...")
+        return torch.load(cache_path).to(next(model.parameters()).device)
+    
+    log_func("Image feature cache not found. Extracting features...")
+    return cache_image_features(
+        model, preprocess, data_records, cache_dir,
+        batch_size=batch_size, log=log_func
+    )
+
+
+def load_or_extract_text_features(
+    model, data_records, cache_dir,
+    batch_size=64, log_func=log
+):
+    cache_path = os.path.join(cache_dir, "text_features.pt")
+    if os.path.exists(cache_path):
+        log_func("Loading cached text features...")
+        return torch.load(cache_path).to(next(model.parameters()).device)
+
+    log_func("Text feature cache not found. Extracting features...")
+    return cache_text_features(
+        model, data_records, cache_dir,
+        batch_size=batch_size, log=log_func
+    )
+
 
 
