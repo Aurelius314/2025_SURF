@@ -38,8 +38,8 @@ def search_image_to_text(image: Image.Image):
                     "NLD_text": r['NLD_text'],
                     "image_base64": r.get('image_base64', "")
                 })
-            # 如果不足9条补齐空字符串
-            while len(formatted_results) < 9:
+            # 如果不足20条补齐空字符串
+            while len(formatted_results) < 20:
                 formatted_results.append({
                     "rank": "",
                     "score": "",
@@ -50,14 +50,14 @@ def search_image_to_text(image: Image.Image):
 
             return formatted_results
         else:
-            return [{"original_text": f"Error: {str(e)}", "NLD_text": "", "image_base64": ""}] * 9
+            return [{"original_text": f"Error: {str(e)}", "NLD_text": "", "image_base64": ""}] * 20
 
     except Exception as e:
         return [{
             "original_text": f"Error: {str(e)}",
             "NLD_text": "",
             "image_base64": ""
-        }] * 9
+        }] * 20
 
     
 
@@ -78,20 +78,20 @@ def search_text_to_image(text: str):
                 rank_label = f"Rank {r['rank']} ({r['score']}%)"
                 updates.extend([img, ori, nld, rank_label])
         # 不足补空
-        while len(updates) < 9 * 4:
+        while len(updates) < 20 * 4:
             updates.extend([None, "", "", ""])
         return updates
     
     except Exception as e:  
         print(e)  
-        return [None, "", ""] * 9
+        return [None, "", ""] * 20
 
 # ------------图搜文 Gradio UI-------------------
 
-#         # # 9 个文本框显示 original text 和 NLD text
-#         # result_boxes = [gr.Textbox(label=f"Result {i+1}", lines=3, interactive=False) for i in range(9)]
+#         # # 20 个文本框显示 original text 和 NLD text
+#         # result_boxes = [gr.Textbox(label=f"Result {i+1}", lines=3, interactive=False) for i in range(20)]
 
-#         # # 按钮点击后调用函数，更新9个输出框
+#         # # 按钮点击后调用函数，更新20个输出框
 #         # search_button.click(fn=search_image_to_text, inputs=image_input, outputs=result_boxes)
 
 def image_to_text_tab():
@@ -100,7 +100,7 @@ def image_to_text_tab():
         search_button = gr.Button("Search", variant="primary")
 
         output_cards = []
-        for i in range(9):
+        for i in range(20):
             with gr.Column():
                 rank_score = gr.Textbox(label="Rank", interactive=False)  # 加一个显示 Rank 和 Score 的框
                 text_ori = gr.Textbox(label="Original", interactive=False)
@@ -121,7 +121,7 @@ def image_to_text_tab():
                     r.get("image_base64", "")
                 ])
 
-            while len(outputs) < 9 * 4:
+            while len(outputs) < 20 * 4:
                 outputs.extend(["", "", "", ""])
             return outputs
 
@@ -152,7 +152,7 @@ def text_to_image_tab():
         # 每个输出卡片是一组 [Image, original, nld]
         with gr.Row() as card_row:
             output_cards = []
-            for _ in range(9): 
+            for _ in range(20): 
                 with gr.Column():
                     # img = gr.Image(height=200)
                     img = gr.Image(height=200, label="Image")
