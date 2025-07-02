@@ -38,6 +38,9 @@ def search_image_to_text(image: Image.Image):
                     "NLD_text": r['NLD_text'],
                     "image_base64": r.get('image_base64', "")
                 })
+
+                # print("image_base64:", r.get("image_base64", ""))
+                
             # 如果不足20条补齐空字符串
             while len(formatted_results) < 20:
                 formatted_results.append({
@@ -106,9 +109,12 @@ def image_to_text_tab():
                 text_ori = gr.Textbox(label="Original", interactive=False)
                 text_nld = gr.Textbox(label="NLD (Natural Language Description)", interactive=False)
                 image_base64_box = gr.Textbox(visible=False)  # 存图像 base64
-                show_button = gr.Button("Show Image")
-                img = gr.Image(visible=False)
-                output_cards.append((rank_score, text_ori, text_nld, image_base64_box, show_button, img))
+                # 添加一个隐藏的状态变量来跟踪图片是否可见
+                is_visible = gr.State(False)
+                toggle_button = gr.Button("Show Image")
+                # 设置固定高度和宽度，保持图片美观
+                img = gr.Image(visible=False, height=300, width=400)
+                output_cards.append((rank_score, text_ori, text_nld, image_base64_box, is_visible, toggle_button, img))
 
         def handle_search(image):
             results = search_image_to_text(image)
@@ -131,15 +137,25 @@ def image_to_text_tab():
 
         search_button.click(fn=handle_search, inputs=image_input, outputs=flat_outputs)
 
-        # ✅ 放在这里：修复 Show Image 无效的问题
-        def show_image_fixed(image_base64):
-            if image_base64:
-                return Image.open(io.BytesIO(base64.b64decode(image_base64)))
-            return None
+        # 修改为切换图片显示状态的函数
+        def toggle_image_visibility(image_base64, is_visible):
+            if not is_visible:  # 如果图片当前不可见，则显示
+                try:
+                    if image_base64:
+                        return True, Image.open(io.BytesIO(base64.b64decode(image_base64))), gr.update(visible=True), gr.update(value="Hide Image")
+                except Exception as e:
+                    print("解码图片失败:", e)
+                return True, None, gr.update(visible=True), gr.update(value="Hide Image")
+            else:  # 如果图片当前可见，则隐藏
+                return False, gr.update(value=None), gr.update(visible=False), gr.update(value="Show Image")
 
         for card in output_cards:
-            rank_score, text_ori, text_nld, image_base64_box, show_button, img = card
-            show_button.click(fn=show_image_fixed, inputs=image_base64_box, outputs=img)
+            rank_score, text_ori, text_nld, image_base64_box, is_visible, toggle_button, img = card
+            toggle_button.click(
+                fn=toggle_image_visibility, 
+                inputs=[image_base64_box, is_visible], 
+                outputs=[is_visible, img, img, toggle_button]
+            )
 
 
 # ------------文搜图 Gradio UI-------------------
