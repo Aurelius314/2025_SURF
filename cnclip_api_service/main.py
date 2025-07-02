@@ -88,9 +88,8 @@ async def image_to_text(img_base64: str = Body(...), api_key: str = Body(...)):
             "text_id": tid,
             "original_text": ori,
             "NLD_text": nld,
-            # 使用 os.path.basename 去除多余路径
-            "image_path": os.path.basename(image_paths_list[i][0]) if (i < len(image_paths_list) and image_paths_list[i]) else None
-
+            # 正确的方法获取basename (如 1000.png, 1001.png)
+            "image_basename": os.path.basename(img_rel_path[i][0]) if (i < len(img_rel_path) and img_rel_path[i]) else None
         }
         for i, (tid, ori, nld) in enumerate(zip(text_ids, original_texts, nld_texts))
     ]
@@ -123,19 +122,22 @@ async def image_to_text(img_base64: str = Body(...), api_key: str = Body(...)):
         # 图搜文，先不要输出文本对应的图片
         rec = text_records[record_mapping[idx]]
 
+        # image_rel_path = rec["image_basename"]
+        # image_basename = os.path.basename(image_rel_path) if image_rel_path else None
+
         # # 加载原图
-        image_path = rec["image_path"]
-        if image_path is None:
-            print(f"[Warning] No image path for rank {i+1}, text_id: {rec['text_id']}")
-            image_base64 = ""  # 填空字符串占位
-        else:
-            image_abs_path = os.path.join(IMAGE_ROOT, image_path)
+        if rec["image_basename"]:
+            image_abs_path = os.path.join(IMAGE_ROOT, rec["image_basename"]).replace('\\', '/')
+            # print(f"[调试] image_abs_path: {image_abs_path}")
             try:
                 with open(image_abs_path, 'rb') as f:
                     image_base64 = base64.b64encode(f.read()).decode("utf-8")
             except FileNotFoundError:
-                print(f"[Error] File not found: {image_abs_path}")
+                # print(f"[Error] File not found: {image_abs_path}")
                 image_base64 = ""  # 防止文件找不到时程序中断
+        else:
+            # 处理无图片情况
+            image_base64 = ""  # 填空字符串占位
 
         results.append({
             "rank": i + 1,
