@@ -18,6 +18,10 @@ API_TO_IMAGE_URL = "http://127.0.0.1:8000/text-to-image/"
 
 # -------------- 1. 图搜文功能 ---------------
 def search_image_to_text(image: Image.Image):
+    # 检查图片是否为空
+    if image is None:
+        return [{"original_text": "Error: No image provided", "NLD_text": "", "image_base64": ""}] * 20
+
     buffered = io.BytesIO()
     image.save(buffered, format="JPEG")
     img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
@@ -53,9 +57,9 @@ def search_image_to_text(image: Image.Image):
 
             return formatted_results
         else:
-            return [{"original_text": f"Error: {str(e)}", "NLD_text": "", "image_base64": ""}] * 20
+            return [{"original_text": "Error: No results", "NLD_text": "", "image_base64": ""}] * 20
 
-    except Exception as e:
+    except Exception as e:  
         return [{
             "original_text": f"Error: {str(e)}",
             "NLD_text": "",
@@ -66,28 +70,40 @@ def search_image_to_text(image: Image.Image):
 
 # ---------- 2. 文搜图功能 -----------------
 def search_text_to_image(text: str):  
+    if not text.strip():
+        # 如果输入为空，返回20组空结果
+        return [None, "", "", ""] * 20
+
     payload = {"query_text": text, "api_key": API_KEY}  
     try:  
         response = requests.post(API_TO_IMAGE_URL, json=payload)  
         response.raise_for_status()  
         result = response.json()  
 
-        updates = []
-        if "top_k_results" in result:  
-            for r in result["top_k_results"]:  
-                img = Image.open(io.BytesIO(base64.b64decode(r['image_base64'])))  
-                ori = f"{r['original_text']}"
-                nld = f"{r['NLD_text']}"
-                rank_label = f"Rank {r['rank']} ({r['score']}%)"
-                updates.extend([img, ori, nld, rank_label])
-        # 不足补空
-        while len(updates) < 20 * 4:
-            updates.extend([None, "", "", ""])
-        return updates
+        # 准备存储20组结果
+        results = []
+        if "top_k_results" in result:
+            # 只取前20个结果
+            for r in result["top_k_results"][:20]:  
+                try:
+                    img = Image.open(io.BytesIO(base64.b64decode(r['image_base64'])))  
+                    ori = f"{r['original_text']}"
+                    nld = f"{r['NLD_text']}"
+                    rank_label = f"Rank {r['rank']} ({r['score']}%)"
+                    results.extend([img, ori, nld, rank_label])
+                except Exception as e:
+                    print(f"Error processing result: {e}")
+                    results.extend([None, "", "", ""])
+        
+        # 如果结果不足20组，补充空结果
+        while len(results) < 80:  # 20组 × 4个元素
+            results.extend([None, "", "", ""])
+            
+        return results[:80]  # 确保返回正好20组结果
     
     except Exception as e:  
-        print(e)  
-        return [None, "", ""] * 20
+        print(f"Error in search_text_to_image: {e}")  
+        return [None, "", "", ""] * 20
 
 # ------------图搜文 Gradio UI-------------------
 
