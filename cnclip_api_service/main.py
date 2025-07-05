@@ -13,6 +13,7 @@ from lmdb import open as open_lmdb
 from tqdm import tqdm
 from pathlib import Path
 import sys
+import torchvision.transforms as T
 
 sys.path.append(r'E:/surf')
 from utils import load_surf_checkpoint_model_from_base, load_text_data_from_lmdb, load_images_from_paths
@@ -71,8 +72,9 @@ data_records = [
     for i in range(len(image_paths_list))
 ]
 
-image_features_tensor = cache_image_features(model, preprocess, data_records, CACHE_DIR)
-text_features_tensor = cache_text_features(model, data_records, CACHE_DIR)
+# 加载特征并确保是float32类型
+image_features_tensor = cache_image_features(model, preprocess, data_records, CACHE_DIR).float()
+text_features_tensor = cache_text_features(model, data_records, CACHE_DIR).float()
 # # 模型初始化阶段做一次
 # image_features_tensor /= image_features_tensor.norm(dim=1, keepdim=True)
 
@@ -80,8 +82,31 @@ text_features_tensor = cache_text_features(model, data_records, CACHE_DIR)
 
 @app.post("/image-to-text/")
 async def image_to_text(img_base64: str = Body(...), api_key: str = Body(...)):
-   
     verify_api_key(api_key)
+
+    # 解码 base64 图片为 PIL.Image
+    try:
+        img_bytes = base64.b64decode(fix_base64_padding(img_base64))
+        image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image data: {e}")
+
+    # 提取上传图片的特征
+    image_tensor = preprocess(image)
+    if not isinstance(image_tensor, torch.Tensor):
+        image_tensor = T.ToTensor()(image)
+    image_input = image_tensor.unsqueeze(0).to(device)  # shape: [1, 3, H, W]
+    with torch.no_grad():
+        image_features = model.encode_image(image_input)
+        image_features = image_features.float()
+        image_features /= image_features.norm(dim=1, keepdim=True)  # shape: [1, D]
+        text_features = text_features_tensor / text_features_tensor.norm(dim=1, keepdim=True)
+        logit_scale = model.logit_scale.exp()
+        logits_per_image = logit_scale * image_features @ text_features.t()
+        probs = logits_per_image.softmax(dim=-1).cpu().numpy()[0]
+
+    # Top-K 结果
+    topk_indices = probs.argsort()[-20:][::-1].tolist() 
 
     text_records = [
         {
@@ -94,7 +119,6 @@ async def image_to_text(img_base64: str = Body(...), api_key: str = Body(...)):
         for i, (tid, ori, nld) in enumerate(zip(text_ids, original_texts, nld_texts))
     ]
 
-    # 去重原文,seen已经见过的
     seen = set()
     text_candidates, record_mapping = [], []
     for i, rec in enumerate(text_records):
@@ -103,42 +127,18 @@ async def image_to_text(img_base64: str = Body(...), api_key: str = Body(...)):
             text_candidates.append(rec["original_text"])
             record_mapping.append(i)
 
-    # print("使用的 text_candidates 数量:", len(text_candidates))
-
-    with torch.no_grad():
-        # 已缓存好的特征张量
-        image_features = image_features_tensor / image_features_tensor.norm(dim=1, keepdim=True)
-        text_features = text_features_tensor / text_features_tensor.norm(dim=1, keepdim=True)
-
-        logit_scale = model.logit_scale.exp()
-        logits_per_image = logit_scale * image_features @ text_features.t()
-        probs = logits_per_image.softmax(dim=-1).cpu().numpy()[0]
-
-    # Top-K 结果
-    topk_indices = probs.argsort()[-20:][::-1].tolist() 
-
     results = []
     for i, idx in enumerate(topk_indices):
-        # 图搜文，先不要输出文本对应的图片
         rec = text_records[record_mapping[idx]]
-
-        # image_rel_path = rec["image_basename"]
-        # image_basename = os.path.basename(image_rel_path) if image_rel_path else None
-
-        # # 加载原图
         if rec["image_basename"]:
             image_abs_path = os.path.join(IMAGE_ROOT, rec["image_basename"]).replace('\\', '/')
-            # print(f"[调试] image_abs_path: {image_abs_path}")
             try:
                 with open(image_abs_path, 'rb') as f:
                     image_base64 = base64.b64encode(f.read()).decode("utf-8")
             except FileNotFoundError:
-                # print(f"[Error] File not found: {image_abs_path}")
-                image_base64 = ""  # 防止文件找不到时程序中断
+                image_base64 = ""
         else:
-            # 处理无图片情况
-            image_base64 = ""  # 填空字符串占位
-
+            image_base64 = ""
         results.append({
             "rank": i + 1,
             "text_id": rec["text_id"],
@@ -161,9 +161,13 @@ async def text_to_image(query_text: str = Body(...), api_key: str = Body(...)):
     with torch.no_grad():
         tokens = clip.tokenize([query_text]).to(device)
         text_features = model.encode_text(tokens)
+        # 确保文本特征是 float32 类型
+        text_features = text_features.float()
         text_features /= text_features.norm(dim=-1, keepdim=True)
 
-        image_features = image_features_tensor / image_features_tensor.norm(dim=1, keepdim=True)
+        # 确保图像特征也是 float32 类型
+        image_features = image_features_tensor.float()
+        image_features /= image_features.norm(dim=1, keepdim=True)
 
         # Debug shape check
         assert text_features.ndim == 2, f"text_features wrong shape: {text_features.shape}"
