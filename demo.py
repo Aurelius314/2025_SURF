@@ -15,11 +15,6 @@ API_KEY = "your_demo_api_key"
 API_TO_TEXT_URL = "http://127.0.0.1:8000/image-to-text/"
 API_TO_IMAGE_URL = "http://127.0.0.1:8000/text-to-image/"
 
-'''
-问答组代码
-'''
-API_CHAT_URL = "http://127.0.0.1:8000/chat/"  # 新增聊天API示例
-
 
 # -------------- 1. 图搜文功能 ---------------
 def search_image_to_text(image: Image.Image):
@@ -110,43 +105,13 @@ def search_text_to_image(text: str):
         print(f"Error in search_text_to_image: {e}")  
         return [None, "", "", ""] * 20
 
-# ---------- 3. 聊天功能示例（请根据实际功能修改） -----------------
-def chat_response(message, history):
-    if not message.strip():
-        return "", history
-    
-    # 构建历史对话记录
-    conversation_history = []
-    for user_msg, bot_msg in history:
-        conversation_history.append({"role": "user", "content": user_msg})
-        conversation_history.append({"role": "assistant", "content": bot_msg})
-    
-    # 添加当前用户消息
-    conversation_history.append({"role": "user", "content": message})
-    
-    # 调用聊天API
-    try:
-        payload = {
-            "messages": conversation_history,
-            "api_key": API_KEY
-        }
-        response = requests.post(API_CHAT_URL, json=payload)
-        response.raise_for_status()
-        result = response.json()
-        
-        if "response" in result:
-            return result["response"], history + [[message, result["response"]]]
-        else:
-            return "抱歉，系统无法生成回复。", history + [[message, "抱歉，系统无法生成回复。"]]
-
-    except Exception as e:
-        print(f"Error in chat_response: {e}")
-        return f"系统错误: {str(e)}", history + [[message, f"系统错误: {str(e)}"]]
-'''
-问答组代码
-'''
-
 # ------------图搜文 Gradio UI-------------------
+
+#         # # 20 个文本框显示 original text 和 NLD text
+#         # result_boxes = [gr.Textbox(label=f"Result {i+1}", lines=3, interactive=False) for i in range(20)]
+
+#         # # 按钮点击后调用函数，更新20个输出框
+#         # search_button.click(fn=search_image_to_text, inputs=image_input, outputs=result_boxes)
 
 def image_to_text_tab():
     with gr.Column(elem_id="image2text-tab"):
@@ -233,38 +198,13 @@ def text_to_image_tab():
         flat_outputs = [comp for card in output_cards for comp in card]
         search_button.click(fn=search_text_to_image, inputs=[query_input], outputs=flat_outputs)
 
-# ------------问答聊天框 Gradio UI 示例-------------------
-def chat_interface():
-    with gr.Column():
-        gr.Markdown("### 🤖 问答助手")
-        chatbot = gr.Chatbot(height=500, label="对话内容展示区")
-        msg = gr.Textbox(label="输入对话内容", placeholder="请输入你的问题")
-        send_btn = gr.Button("发送", variant="primary")
-        
-        # 绑定发送按钮事件
-        send_btn.click(fn=chat_response, inputs=[msg, chatbot], outputs=[msg, chatbot])
-        # 绑定回车键发送
-        msg.submit(fn=chat_response, inputs=[msg, chatbot], outputs=[msg, chatbot])
-'''
-问答组代码
-'''
-
 # gradio launch
 with gr.Blocks() as ui:
     gr.Markdown("<h1 style='text-align: center;'>Multi-Modal Retrieval Demo</h1>")
-    
-    # 使用Row布局，左侧是检索功能，右侧是聊天框
-    with gr.Row():
-        # 左侧检索功能区域（占比较大）
-        with gr.Column(scale=4):
-            with gr.Tab("Text to Image"):
-                text_to_image_tab()
-            with gr.Tab("Image to Text"):
-                image_to_text_tab()
-        
-        # 右侧聊天框区域（占比较小）
-        with gr.Column(scale=1):
-            chat_interface()
+    with gr.Tab("Image to Text"):
+        image_to_text_tab()
+    with gr.Tab("Text to Image"):
+        text_to_image_tab()
 
 ui.launch(debug=True, share=False)
 
