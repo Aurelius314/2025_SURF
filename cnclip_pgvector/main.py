@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Body
 from PIL import Image
 import sys, os, io, gc, base64
 from pgvector_util import query_similar_features
-from database import init_db, db_pool
+from database import init_db, close_db, get_conn, put_conn
 import cn_clip.clip as clip
 import threading
 import time
@@ -16,7 +16,7 @@ sys.path.append(r"E:\Chinese-CLIP-master")
 sys.path.append(r"E:/surf")
 from utils import load_surf_checkpoint_model_from_base
 from lazy_load_utils import get_lmdb_record_by_text_id, get_lmdb_record_by_image_id
-from pgvector_util import TEXT_VECTOR_COLUMN, IMAGE_VECTOR_COLUMN
+from pgvector_util import TEXT_VECTOR_COLUMN, IMAGE_VECTOR_COLUMN, TEXT_RECORD_ID_COLUMN, IMAGE_RECORD_ID_COLUMN
 
 # ---------------- 初始化 ----------------
 app = FastAPI()
@@ -61,6 +61,7 @@ async def startup_event():
 
 @app.on_event("shutdown")
 def shutdown_event():
+    close_db()
     print("服务器关闭，无需手动释放连接池连接。")
 
 @app.get("/")
@@ -80,8 +81,14 @@ async def image_to_text(
     LMDB_PATH = r"E:\surf\dataset"
     if model is None or preprocess is None:
         raise HTTPException(status_code=503, detail="Server is still initializing. Please try again later.")
+    
     verify_api_key(api_key)
 
+    total_start = time.time()
+
+
+    # 1. 图像预处理
+    stage1_start = time.time()
     try:
         img_bytes = base64.b64decode(fix_base64_padding(query_img_base64))
         image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
@@ -90,7 +97,10 @@ async def image_to_text(
 
     image_tensor = preprocess(image)
     image_input = image_tensor.unsqueeze(0).to(device)
+    stage1_end = time.time()
 
+    # 2. 模型编码
+    stage2_start = time.time()
     with model_lock:
         with torch.no_grad():
             image_features = model.encode_image(image_input)
@@ -99,24 +109,31 @@ async def image_to_text(
             image_features = image_features.cpu()
         torch.cuda.empty_cache()
         gc.collect()
+    stage2_end = time.time()
 
-    conn = db_pool.getconn()
+    # 3. 向量检索
+    stage3_start = time.time()
+    conn = get_conn()
+    # print("db_pool in handler:", conn)
+
     try:
-        start = time.time()
         topk_records = query_similar_features(
             image_features.squeeze(0),
             'text_features',
-            conn,
+            record_column_name=TEXT_RECORD_ID_COLUMN,
+            conn=conn,
             offset=offset,
             limit=limit,
             probes=10,
             vector_column=TEXT_VECTOR_COLUMN
         )
-        end = time.time()
-        print("图搜文耗时：", end - start)
+        # print("图搜文耗时：", end_query - start_query)
     finally:
-        db_pool.putconn(conn)
+        conn = put_conn(conn)
+    stage3_end = time.time()
 
+    # 4. 结果构造（包括加载LMDB + 图像base64）
+    stage4_start = time.time()
     # temperature缩放
     temperature = 0.05
     similarities = np.array([sim for _, sim in topk_records])
@@ -128,7 +145,7 @@ async def image_to_text(
         rec_id_search_in_lmdb = int(rec_id)
         record = get_lmdb_record_by_text_id(LMDB_PATH, rec_id_search_in_lmdb)
         if not record:
-            print(f"⚠️ 找不到 text_id {rec_id} 对应的记录")
+            print(f"找不到 text_id {rec_id} 对应的记录")
             continue
 
         # image_basename = os.path.basename(record["image_paths"][0])
@@ -150,13 +167,24 @@ async def image_to_text(
             "image_base64": image_base64,
             "score": round(probs[i] * 100, 3)
         })
+    stage4_end = time.time()
+
+    total_end = time.time()
+
+    print("------FastAPI 后端耗时统计（图搜文）------")
+    print(f"  预处理耗时：{stage1_end - stage1_start:.4f} 秒")
+    print(f"  编码耗时：{stage2_end - stage2_start:.4f} 秒")
+    print(f"  检索耗时：{stage3_end - stage3_start:.4f} 秒")
+    print(f"  构造结果耗时：{stage4_end - stage4_start:.4f} 秒")
+    print(f"  总耗时：{total_end - total_start:.4f} 秒")
 
     return{
         "query": query_img_base64[:30],
         "offset": offset,
         "limit": limit,
-        "results": results
+        "top_k_results": results
     }
+    
 
 # ---------------- 文搜图 ----------------
 @app.post("/text-to-image/")
@@ -172,34 +200,51 @@ async def text_to_image(
         raise HTTPException(status_code=503, detail="Server is still initializing. Please try again later.")
     verify_api_key(api_key)
 
+    total_start = time.time()
+
+    # 1. 文本预处理
+    stage1_start = time.time()
+    try:
+        tokens = clip.tokenize([query_text]).to(device)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid text input: {e}")
+    stage1_end = time.time()
+
+    # 2. 模型编码
+    stage2_start = time.time()
     with model_lock:
         with torch.no_grad():
-            tokens = clip.tokenize([query_text]).to(device)
             text_features = model.encode_text(tokens)
             text_features = text_features.float()
             text_features /= text_features.norm(dim=-1, keepdim=True)
             text_features = text_features.cpu()
         torch.cuda.empty_cache()
         gc.collect()
+    stage2_end = time.time()
 
-    conn = db_pool.getconn()
+    # 3. 向量检索
+    stage3_start = time.time()
+    conn = get_conn()
+    print("db_pool in handler:", conn)
     try:
         # probes=5更快响应（可能略牺牲 recall）：
-        start = time.time()
         topk_records = query_similar_features(
             text_features.squeeze(0),
             'image_features',
-            conn,
+            record_column_name=IMAGE_RECORD_ID_COLUMN,
+            conn=conn,
             offset=offset,
             limit=limit,
             probes=10,
             vector_column=IMAGE_VECTOR_COLUMN
         )
-        end = time.time()
-        print("文搜图耗时：", end - start)
+        # print("文搜图耗时：", end_query - start_query)
     finally:
-        db_pool.putconn(conn)
+        conn = put_conn(conn)
+    stage3_end = time.time()
 
+    # 4. 构造结果（包括LMDB + 图像base64）
+    stage4_start = time.time()
     # temperature缩放
     temperature = 0.05
     similarities = np.array([sim for _, sim in topk_records])
@@ -213,7 +258,7 @@ async def text_to_image(
         record = get_lmdb_record_by_image_id(LMDB_PATH, rec_id_search_in_lmdb)
 
         if not record:
-            print(f"⚠️ 找不到 image_id {rec_id} 对应的记录")
+            print(f"找不到 image_id {rec_id} 对应的记录")
             continue
 
         image_basename = rec_id + ".png"
@@ -240,12 +285,20 @@ async def text_to_image(
             "score": round(probs[i] * 100, 3)
         })
 
+    stage4_end = time.time()
+    total_end = time.time()
 
-    # return {"top_k_results": results}
-    # 返回json格式的api
+    # 打印耗时日志
+    print("------FastAPI 后端耗时统计（文搜图）------")
+    print(f"  预处理耗时：{stage1_end - stage1_start:.4f} 秒")
+    print(f"  编码耗时：{stage2_end - stage2_start:.4f} 秒")
+    print(f"  检索耗时：{stage3_end - stage3_start:.4f} 秒")
+    print(f"  构造结果耗时：{stage4_end - stage4_start:.4f} 秒")
+    print(f"  总耗时：{total_end - total_start:.4f} 秒")
+
     return {
         "query": query_text,
         "offset": offset,
         "limit": limit,
-        "results": results
+        "top_k_results": results
     }
