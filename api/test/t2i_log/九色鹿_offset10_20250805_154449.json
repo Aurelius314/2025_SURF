@@ -1,0 +1,153 @@
+{
+  "query": "九色鹿",
+  "offset": 10,
+  "limit": 10,
+  "results": [
+    {
+      "rank": 11,
+      "score": 23.268,
+      "record": {
+        "table": "tw_image",
+        "id": "3168-11-9",
+        "fields": {
+          "image_id": "3168-11-9",
+          "local_path": "/mnt/disk9T/shared/datasets/博物院/台湾国立故宫博物院/典藏资料/images/繪畫/3168-11-9.png",
+          "url": "https://digitalarchive.npm.gov.tw/Image/GetImage?imageId=959145&randomCode=630327709",
+          "source": "台湾国立故宫博物院",
+          "image_feature_preview": "[-0.0038318634,0.023..."
+        }
+      }
+    },
+    {
+      "rank": 12,
+      "score": 23.143,
+      "record": {
+        "table": "tw_image",
+        "id": "3714-5-8",
+        "fields": {
+          "image_id": "3714-5-8",
+          "local_path": "/mnt/disk9T/shared/datasets/博物院/台湾国立故宫博物院/典藏资料/images/絲繡/3714-5-8.png",
+          "url": "https://digitalarchive.npm.gov.tw/Image/GetImage?imageId=625562&randomCode=1497171628",
+          "source": "台湾国立故宫博物院",
+          "image_feature_preview": "[0.03289795,0.024444..."
+        }
+      }
+    },
+    {
+      "rank": 13,
+      "score": 23.052,
+      "record": {
+        "table": "surf_image",
+        "id": "3863",
+        "fields": {
+          "image_id": "3863",
+          "local_path": "/mnt/disk9T/shared/datasets/敦煌检索/images_split/split2/3863.png",
+          "source": "SURF敦煌检索数据集",
+          "image_feature_preview": "[0.033416748,0.01242..."
+        }
+      }
+    },
+    {
+      "rank": 14,
+      "score": 23.038,
+      "record": {
+        "table": "surf_image",
+        "id": "1144",
+        "fields": {
+          "image_id": "1144",
+          "local_path": "/mnt/disk9T/shared/datasets/敦煌检索/images_split/split2/1144.png",
+          "source": "SURF敦煌检索数据集",
+          "image_feature_preview": "[0.04711914,0.002868..."
+        }
+      }
+    },
+    {
+      "rank": 15,
+      "score": 22.955,
+      "record": {
+        "table": "tw_image",
+        "id": "4832-2-6",
+        "fields": {
+          "image_id": "4832-2-6",
+          "local_path": "/mnt/disk9T/shared/datasets/博物院/台湾国立故宫博物院/典藏资料/images/陶瓷器/4832-2-6.png",
+          "url": "https://digitalarchive.npm.gov.tw/Image/GetImage?imageId=299004&randomCode=21516750531",
+          "source": "台湾国立故宫博物院",
+          "image_feature_preview": "[0.028427124,0.01475..."
+        }
+      }
+    },
+    {
+      "rank": 16,
+      "score": 22.932,
+      "record": {
+        "table": "surf_image",
+        "id": "844",
+        "fields": {
+          "image_id": "844",
+          "local_path": "/mnt/disk9T/shared/datasets/敦煌检索/images_split/split1/844.png",
+          "source": "SURF敦煌检索数据集",
+          "image_feature_preview": "[0.026046753,-0.0192..."
+        }
+      }
+    },
+    {
+      "rank": 17,
+      "score": 22.651,
+      "record": {
+        "table": "surf_image",
+        "id": "2599",
+        "fields": {
+          "image_id": "2599",
+          "local_path": "/mnt/disk9T/shared/datasets/敦煌检索/images_split/split1/2599.png",
+          "source": "SURF敦煌检索数据集",
+          "image_feature_preview": "[0.005290985,0.03094..."
+        }
+      }
+    },
+    {
+      "rank": 18,
+      "score": 22.636,
+      "record": {
+        "table": "tw_image",
+        "id": "3724-2-8",
+        "fields": {
+          "image_id": "3724-2-8",
+          "local_path": "/mnt/disk9T/shared/datasets/博物院/台湾国立故宫博物院/典藏资料/images/絲繡/3724-2-8.png",
+          "url": "https://digitalarchive.npm.gov.tw/Image/GetImage?imageId=632616&randomCode=1757587756",
+          "source": "台湾国立故宫博物院",
+          "image_feature_preview": "[0.01737976,0.021621..."
+        }
+      }
+    },
+    {
+      "rank": 19,
+      "score": 22.561,
+      "record": {
+        "table": "tw_image",
+        "id": "3714-6-5",
+        "fields": {
+          "image_id": "3714-6-5",
+          "local_path": "/mnt/disk9T/shared/datasets/博物院/台湾国立故宫博物院/典藏资料/images/絲繡/3714-6-5.png",
+          "url": "https://digitalarchive.npm.gov.tw/Image/GetImage?imageId=625573&randomCode=1183321333",
+          "source": "台湾国立故宫博物院",
+          "image_feature_preview": "[0.04055786,0.002010..."
+        }
+      }
+    },
+    {
+      "rank": 20,
+      "score": 22.505,
+      "record": {
+        "table": "tw_image",
+        "id": "3629-5-1",
+        "fields": {
+          "image_id": "3629-5-1",
+          "local_path": "/mnt/disk9T/shared/datasets/博物院/台湾国立故宫博物院/典藏资料/images/繪畫/3629-5-1.png",
+          "url": "https://digitalarchive.npm.gov.tw/Image/GetImage?imageId=592771&randomCode=27222212422",
+          "source": "台湾国立故宫博物院",
+          "image_feature_preview": "[0.025009155,-0.0096..."
+        }
+      }
+    }
+  ]
+}
