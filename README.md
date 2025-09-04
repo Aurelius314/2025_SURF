@@ -1,7 +1,7 @@
 
 ## 向量数据库
 
-PostgreSQL数据库：retrieval_db
+PostgreSQL数据库：`retrieval_db`
 
 数据库结构：两大“物化视图”+三组“源表”
 
@@ -44,3 +44,6 @@ CN-CLIP 预训练底座部署：参考cnclip官方说明[OFA-Sys/Chinese-CLIP: C
 command
 - 启动服务：`uvicorn main_corpus:app`
 
+## demo
+
+![荷花_demo](https://github.com/user-attachments/assets/544575c1-1455-4099-ae85-a359798f2418)
