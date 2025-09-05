@@ -64,9 +64,16 @@ def shutdown_event():
 async def image_to_text(
     query_image: str = Body(...),
     offset: int = Body(0),
-    limit: int = Body(20),
+    limit: int = Body(RETRIEVAL_CONFIG['default_limit']),
     session_id: Optional[str] = Body(None)
 ):
+    if limit <= 0 or limit > RETRIEVAL_CONFIG['max_limit']:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Limit must be between 1 and {RETRIEVAL_CONFIG['max_limit']}"
+        )
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="Offset must be non-negative")
 
     now_ts = time.time()
 
@@ -149,9 +156,16 @@ async def image_to_text(
 async def text_to_image(
     query_text: str = Body(...),
     offset: int = Body(0),
-    limit: int = Body(20),
+    limit: int = Body(RETRIEVAL_CONFIG['default_limit']),
     session_id: Optional[str] = Body(None)
 ):
+    if limit <= 0 or limit > RETRIEVAL_CONFIG['max_limit']:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Limit must be between 1 and {RETRIEVAL_CONFIG['max_limit']}"
+        )
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="Offset must be non-negative")
 
     now_ts = time.time()
 
