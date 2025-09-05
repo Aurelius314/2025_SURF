@@ -1,3 +1,18 @@
+后端结构
+```
+/surf/api/
+├── models/                   
+│   ├── epoch_latest.pt       
+│   └── cn_clip/              
+│       ├── ViT-H-14.pt       
+│       └── clip/             
+│           └── ...
+├── main_corpus.py
+├── utils.py
+├── config.py
+└── ...
+```
+说明：`epoch_latest.pt`，`ViT-H-14.pt`，`retrieval_db_backup.sql.gz` 这三个大文件*未包含*在当前仓库中
 
 ## 向量数据库
 
