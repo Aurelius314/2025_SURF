@@ -11,12 +11,34 @@ PostgreSQL数据库：`retrieval_db`
 
 - `text_corpus: src, id, embedding`
 
-2. 三组“源表” （共约52万metadata，其中119,941文本数据，399,982图片数据，数据量共519,923）
+2. 三组“源表” （共约52万有效metadata，其中119,941文本数据，399,982图片数据，数据量共519,923）
 
 - `zj_text`, `zj_image` 浙江省博物院
 - `tw_text`, `tw_image` 台北故宫博物院
 - `surf_text`, `surf_image` 敦煌数据集
 
+**数据库部署**
+
+备份文件：`retrieval_db_backup.sql.gz`
+
+目标服务器准备
+
+```bash  
+# 1. 安装 PostgreSQL  
+sudo apt update  
+sudo apt install postgresql postgresql-contrib  
+
+# 2. 创建数据库用户（交互式）并创建数据库  
+sudo -u postgres createuser --interactive  
+sudo -u postgres createdb retrieval_db  
+
+# 3. 导入数据（先解压备份文件，然后导入）  
+gunzip -c retrieval_db_backup.sql.gz > retrieval_db_backup.sql  
+psql -h localhost -U postgres -d retrieval_db < retrieval_db_backup.sql  
+
+# 可选：导入后删除中间的 SQL 文件以节省空间  
+rm retrieval_db_backup.sql
+```
 
 ## 模型
 
